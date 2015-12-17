@@ -133,11 +133,15 @@ void NtStatusString(NTSTATUS code, std::vector<wchar_t>& message)
 	FreeLibrary(Hand);
 }
 
-void PrintNtStatusErrorMessage(LPCWSTR message, NTSTATUS status)
+void PrintNtStatusErrorMessage(LPCWSTR message, NTSTATUS status, std::vector<std::unique_ptr<wchar_t[]>>* output)
 {
+	std::unique_ptr<wchar_t[]> str(new wchar_t[1024]);
 	std::vector<wchar_t> ntstatusMsg;
 	NtStatusString(status, ntstatusMsg);
-	::wprintf(L"%s[%#x]%s\n", message, status, &ntstatusMsg[0]);
+//	::wprintf(L"%s[%#x]%s\n", message, status, &ntstatusMsg[0]);
+	::swprintf_s(str.get(), 1024, L"%s[%#x]%s\n", message, status, &ntstatusMsg[0]);
+//	output->push_back(std::make_unique<wchar_t[]>(str));
+	output->push_back(std::move(str));
 }
 
 
@@ -153,33 +157,36 @@ _NtQueryObject ApiNtQueryObject;
 
 
 //プロセス名を出力する。
-void PrintProcessName(DWORD pid) 
+void PrintProcessName(DWORD pid, std::vector<std::unique_ptr<wchar_t[]>>* output)
 {
 	DWORD cbNeeded;
 	CEnsureCloseHandle hProcess = ::OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
 	if (NULL != hProcess) {
 		HMODULE hModule;
 		if (::EnumProcessModulesEx(hProcess, &hModule, sizeof(HMODULE), &cbNeeded, LIST_MODULES_ALL)) {
-			wchar_t moduleName[MAX_PATH] = { L'\0' };
-			::GetModuleFileNameExW(hProcess, hModule, moduleName, _countof(moduleName));
-			::wprintf(L"■%s\n", moduleName);
+			std::unique_ptr<wchar_t[]> moduleName(new wchar_t[MAX_PATH]);
+			::GetModuleFileNameExW(hProcess, hModule, moduleName.get(), MAX_PATH);
+			::wcscat_s(moduleName.get(), MAX_PATH, L"\n");
+			output->push_back(std::move(moduleName));
 		}
 		hProcess.Cleanup();
 	}
 }
 
-void PrintHandle(DWORD pid) 
+void PrintHandle(DWORD pid, std::vector<std::unique_ptr<wchar_t[]>>* output)
 {
 	CEnsureCloseHandle hProcess = ::OpenProcess(PROCESS_DUP_HANDLE, FALSE, pid);
 	if (NULL == hProcess) {
-		::wprintf(L"Could not open PID %d! (Don't try to open a system process.)\n", pid);
+		//std::unique_ptr<wchar_t[]> message(new wchar_t[1024]);
+		//::swprintf_s(message.get(), 1024, L"Could not open PID %d! (Don't try to open a system process.)\n", pid);
+		//output->push_back(std::move(message));
 		return;
 	}
 
 	//該当プロセスの状態を取得
 	NTSTATUS status;
 	ULONG returnLength = 4096;
-	std::unique_ptr<char> pHandleBuf(new char[returnLength]);
+	std::unique_ptr<char[]> pHandleBuf(new char[returnLength]);
 	while((status = ::NtQuerySystemInformation(
 				(SYSTEM_INFORMATION_CLASS)SystemHandleInformation, 
 				pHandleBuf.get(), 
@@ -190,9 +197,9 @@ void PrintHandle(DWORD pid)
 	}
 
 	if (!NT_SUCCESS(status)) {
-		wchar_t message[1024] = { L'\0' };
-		::swprintf_s(message, 1024, L"NtQuerySystemInformation failed![pid:%ld]", pid);
-		PrintNtStatusErrorMessage(message, status);
+		//std::unique_ptr<wchar_t[]> message(new wchar_t[1024]);
+		//::swprintf_s(message.get(), 1024, L"NtQuerySystemInformation failed![pid:%ld]", pid);
+		//PrintNtStatusErrorMessage(message.get(), status, output);
 		return;
 	}
 
@@ -209,9 +216,9 @@ void PrintHandle(DWORD pid)
 		HANDLE dupHandleTmp(NULL);
 		status = ApiNtDuplicateObject(hProcess, (HANDLE)syshandle->Handle, ::GetCurrentProcess(), &dupHandleTmp, 0, 0, 0);
 		if (!NT_SUCCESS(status)) {
-			wchar_t message[1024] = { L'\0' };
-			::swprintf_s(message, 1024, L"NtDuplicateObject Error!(Handle:%#x)", syshandle->Handle);
-			PrintNtStatusErrorMessage(message, status);
+			//std::unique_ptr<wchar_t[]> message(new wchar_t[1024]);
+			//::swprintf_s(message.get(), 1024, L"NtDuplicateObject Error!(Handle:%#x)", syshandle->Handle);
+			//PrintNtStatusErrorMessage(message.get(), status, output);
 			continue;
 		}
 		CEnsureCloseHandle dupHandle(dupHandleTmp);
@@ -229,7 +236,7 @@ void PrintHandle(DWORD pid)
 
 		//オブジェクト情報の取得
 		returnLength = 4096;
-		std::unique_ptr<char> pObjectTypeBuf(new char[returnLength]);
+		std::unique_ptr<char[]> pObjectTypeBuf(new char[returnLength]);
 		while((status = ::NtQueryObject(
 								dupHandle, 
 								OBJECT_INFORMATION_CLASS::ObjectTypeInformation,
@@ -241,15 +248,15 @@ void PrintHandle(DWORD pid)
 		}
 
 		if (!NT_SUCCESS(status)) {
-			wchar_t message[1024] = { L'\0' };
-			::swprintf_s(message, 1024, L"NtQueryObject ObjectTypeInformation Get Error!");
-			PrintNtStatusErrorMessage(message, status);
+			//std::unique_ptr<wchar_t[]> message(new wchar_t[1024]);
+			//::swprintf_s(message.get(), 1024, L"NtQueryObject ObjectTypeInformation Get Error!");
+			//PrintNtStatusErrorMessage(message.get(), status, output);
 			continue;
 		}
 
 		//オブジェクト名の取得
 		returnLength = 4096;
-		std::unique_ptr<char> pObjectNameBuf(new char[returnLength]);
+		std::unique_ptr<char[]> pObjectNameBuf(new char[returnLength]);
 		while ((status = ::NtQueryObject(
 								dupHandle, 
 								(OBJECT_INFORMATION_CLASS)ObjectNameInformation, 
@@ -261,9 +268,9 @@ void PrintHandle(DWORD pid)
 		}
 
 		if (!NT_SUCCESS(status)) {
-			wchar_t message[1024] = { L'\0' };
-			::swprintf_s(message, 1024, L"NtQueryObject ObjectNameInformation Get Error!");
-			PrintNtStatusErrorMessage(message, status);
+			//std::unique_ptr<wchar_t[]> message(new wchar_t[1024]);
+			//::swprintf_s(message.get(), 1024, L"NtQueryObject ObjectNameInformation Get Error!");
+			//PrintNtStatusErrorMessage(message.get(), status, output);
 			continue;
 		}
 
@@ -271,7 +278,8 @@ void PrintHandle(DWORD pid)
 		OBJECT_TYPE_INFORMATION *objectTypeInfo = (OBJECT_TYPE_INFORMATION*)pObjectTypeBuf.get();
 		UNICODE_STRING objectName = *(PUNICODE_STRING)pObjectNameBuf.get();
 		if (objectName.Length) {
-			::wprintf(
+			std::unique_ptr<wchar_t[]> message(new wchar_t[1024]);
+			::swprintf_s(message.get(), 1024,
 				L"[%#x] %.*s: %.*s\n",
 				syshandle->Handle,
 				objectTypeInfo->Name.Length / 2,
@@ -279,16 +287,19 @@ void PrintHandle(DWORD pid)
 				objectName.Length / 2,
 				objectName.Buffer
 				);
+			output->push_back(std::move(message));
 		}
 		else
 		{
 			/* Print something else. */
-			::wprintf(
+			std::unique_ptr<wchar_t[]> message(new wchar_t[1024]);
+			::swprintf_s(message.get(), 1024,
 				L"[%#x] %.*s: (unnamed)\n",
 				syshandle->Handle,
 				objectTypeInfo->Name.Length / 2,
 				objectTypeInfo->Name.Buffer
 				);
+			output->push_back(std::move(message));
 		}
 
 		dupHandle.Cleanup();
@@ -322,13 +333,19 @@ int wmain(int argc, wchar_t *argv[])
 		}
 	} while (isProcessGetEnd);
 
+	std::vector<std::unique_ptr<wchar_t[]>> output;
+
 	//ハンドル一覧を出力する
 	int processNum = cbNeeded / sizeof(DWORD);
 	for (int i = 0; i < processNum; i++) {
-		PrintProcessName(process[i]);
-		PrintHandle(process[i]);
+		PrintProcessName(process[i], &output);
+		PrintHandle(process[i], &output);
 	}
 
+	for (auto it = output.begin(); it != output.end(); ++it)
+	{
+		::wprintf_s(L"%s", (*it).get());
+	}
 
     return 0;
 }
