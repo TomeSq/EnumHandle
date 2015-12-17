@@ -106,6 +106,41 @@ typedef struct _SYSTEM_HANDLE_INFORMATION
 } SYSTEM_HANDLE_INFORMATION, *PSYSTEM_HANDLE_INFORMATION;
 
 
+
+void NtStatusString(NTSTATUS code, std::vector<wchar_t>& message)
+{
+	LPVOID lpMessageBuffer;
+	HMODULE Hand = LoadLibraryW(L"NTDLL.DLL");
+
+	::FormatMessageW(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER |
+		FORMAT_MESSAGE_FROM_SYSTEM |
+		FORMAT_MESSAGE_FROM_HMODULE |
+		FORMAT_MESSAGE_MAX_WIDTH_MASK,
+		Hand,
+		code,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		(LPWSTR)&lpMessageBuffer,
+		0,
+		NULL);
+
+	size_t len = ::lstrlenW((LPCWSTR)lpMessageBuffer) + 1;
+	message.resize(len);
+	::wcscpy_s(&message[0], len, (LPCWSTR)lpMessageBuffer);
+
+	// Free the buffer allocated by the system.
+	LocalFree(lpMessageBuffer);
+	FreeLibrary(Hand);
+}
+
+void PrintNtStatusErrorMessage(LPCWSTR message, NTSTATUS status)
+{
+	std::vector<wchar_t> ntstatusMsg;
+	NtStatusString(status, ntstatusMsg);
+	::wprintf(L"%s[%#x]%s\n", message, status, &ntstatusMsg[0]);
+}
+
+
 PVOID GetLibraryProcAddress(PSTR LibraryName, PSTR ProcName)
 {
 	return ::GetProcAddress(::GetModuleHandleA(LibraryName), ProcName);
@@ -155,7 +190,9 @@ void PrintHandle(DWORD pid)
 	}
 
 	if (!NT_SUCCESS(status)) {
-		::wprintf(L"NtQuerySystemInformation failed![%ld]\n", pid);
+		wchar_t message[1024] = { L'\0' };
+		::swprintf_s(message, 1024, L"NtQuerySystemInformation failed![pid:%ld]", pid);
+		PrintNtStatusErrorMessage(message, status);
 		return;
 	}
 
@@ -172,7 +209,9 @@ void PrintHandle(DWORD pid)
 		HANDLE dupHandleTmp(NULL);
 		status = ApiNtDuplicateObject(hProcess, (HANDLE)syshandle->Handle, ::GetCurrentProcess(), &dupHandleTmp, 0, 0, 0);
 		if (!NT_SUCCESS(status)) {
-			::wprintf(L"ZwDuplicateObject Error!\n");
+			wchar_t message[1024] = { L'\0' };
+			::swprintf_s(message, 1024, L"NtDuplicateObject Error!(Handle:%#x)", syshandle->Handle);
+			PrintNtStatusErrorMessage(message, status);
 			continue;
 		}
 		CEnsureCloseHandle dupHandle(dupHandleTmp);
@@ -202,7 +241,9 @@ void PrintHandle(DWORD pid)
 		}
 
 		if (!NT_SUCCESS(status)) {
-			::wprintf(L"NtQueryObject Error!\n");
+			wchar_t message[1024] = { L'\0' };
+			::swprintf_s(message, 1024, L"NtQueryObject ObjectTypeInformation Get Error!");
+			PrintNtStatusErrorMessage(message, status);
 			continue;
 		}
 
@@ -218,6 +259,14 @@ void PrintHandle(DWORD pid)
 		{
 			pObjectNameBuf.reset(new char[returnLength]);
 		}
+
+		if (!NT_SUCCESS(status)) {
+			wchar_t message[1024] = { L'\0' };
+			::swprintf_s(message, 1024, L"NtQueryObject ObjectNameInformation Get Error!");
+			PrintNtStatusErrorMessage(message, status);
+			continue;
+		}
+
 
 		OBJECT_TYPE_INFORMATION *objectTypeInfo = (OBJECT_TYPE_INFORMATION*)pObjectTypeBuf.get();
 		UNICODE_STRING objectName = *(PUNICODE_STRING)pObjectNameBuf.get();
@@ -241,6 +290,8 @@ void PrintHandle(DWORD pid)
 				objectTypeInfo->Name.Buffer
 				);
 		}
+
+		dupHandle.Cleanup();
 	}
 
 
