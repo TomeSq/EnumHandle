@@ -229,7 +229,7 @@ void PrintHandle(DWORD pid)
 	hProcess.Cleanup();
 }
 
-int main()
+int wmain(int argc, wchar_t *argv[])
 {
 	::setlocale(LC_ALL, "JPN");
 
