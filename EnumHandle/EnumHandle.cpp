@@ -190,15 +190,15 @@ void PrintHandle(DWORD pid)
 
 		//オブジェクト情報の取得
 		returnLength = 4096;
-		std::unique_ptr<char> pObjectBuf(new char[returnLength]);
+		std::unique_ptr<char> pObjectTypeBuf(new char[returnLength]);
 		while((status = ::NtQueryObject(
 								dupHandle, 
 								OBJECT_INFORMATION_CLASS::ObjectTypeInformation,
-								pObjectBuf.get(), 
+								pObjectTypeBuf.get(),
 								returnLength, 
 								&returnLength)) == STATUS_INFO_LENGTH_MISMATCH) 
 		{
-			pObjectBuf.reset(new char[returnLength]);
+			pObjectTypeBuf.reset(new char[returnLength]);
 		}
 
 		if (!NT_SUCCESS(status)) {
@@ -216,12 +216,30 @@ void PrintHandle(DWORD pid)
 								returnLength, 
 								&returnLength) == STATUS_INFO_LENGTH_MISMATCH)) 
 		{
-			pObjectBuf.reset(new char[returnLength]);
+			pObjectNameBuf.reset(new char[returnLength]);
 		}
 
+		OBJECT_TYPE_INFORMATION *objectTypeInfo = (OBJECT_TYPE_INFORMATION*)pObjectTypeBuf.get();
 		UNICODE_STRING objectName = *(PUNICODE_STRING)pObjectNameBuf.get();
 		if (objectName.Length) {
-			::wprintf(L"%s\n", objectName.Buffer);
+			::wprintf(
+				L"[%#x] %.*s: %.*s\n",
+				syshandle->Handle,
+				objectTypeInfo->Name.Length / 2,
+				objectTypeInfo->Name.Buffer,
+				objectName.Length / 2,
+				objectName.Buffer
+				);
+		}
+		else
+		{
+			/* Print something else. */
+			::wprintf(
+				L"[%#x] %.*s: (unnamed)\n",
+				syshandle->Handle,
+				objectTypeInfo->Name.Length / 2,
+				objectTypeInfo->Name.Buffer
+				);
 		}
 	}
 
