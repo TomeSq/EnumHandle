@@ -8,6 +8,7 @@
 #include <Windows.h>
 #include <Winternl.h>
 #include <psapi.h>
+#include <locale.h>
 
 #include <vector>
 #include <memory>
@@ -230,6 +231,8 @@ void PrintHandle(DWORD pid)
 
 int main()
 {
+	::setlocale(LC_ALL, "JPN");
+
 	BOOL isProcessGetEnd;
 	DWORD cbNeeded;
 	std::vector<DWORD> process(4096);
